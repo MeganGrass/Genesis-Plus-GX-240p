@@ -503,6 +503,14 @@ static void gxResetMode(GXRModeObj *tvmode, int vfilter_enabled)
 /* Update Aspect Ratio */
 static void gxSetAspectRatio(int *xscale, int *yscale)
 {
+    /* Vertical Scaling is disabled for 240p/480i gameplay */
+    if (!ConfigRequested)
+    {
+        *xscale = (bitmap.viewport.w + (2 * bitmap.viewport.x)) / 2;
+        *yscale = (bitmap.viewport.h + (2 * bitmap.viewport.y)) / 2;
+        return;
+    }
+
   /* Vertical Scaling is disabled by default */
   *yscale = (bitmap.viewport.h + (2 * bitmap.viewport.y)) / 2;
 
@@ -612,7 +620,8 @@ static void gxResetScaler(u32 width)
   gxSetAspectRatio(&xscale, &yscale);
 
   /* default EFB width */
-  rmode->fbWidth = 640;
+  if (!ConfigRequested) rmode->fbWidth = 320;
+  else rmode->fbWidth = 640;
 
   /* no filtering, disable GX horizontal scaling */
   if (!config.bilinear && !config.ntsc)
@@ -624,7 +633,13 @@ static void gxResetScaler(u32 width)
   }
 
   /* configure VI width */
-  if ((xscale * 2) > rmode->fbWidth)
+  if (!ConfigRequested)
+  {
+      /* VI horizontal scaling is disabled */
+      rmode->viWidth = rmode->fbWidth;
+      rmode->viXOrigin = (720 - rmode->fbWidth) / 2;
+  }
+  else if ((xscale * 2) > rmode->fbWidth)
   {
     /* max width = 720 pixels */
     if (xscale > 360)
@@ -781,7 +796,7 @@ static void gxDrawCdLeds(gx_texture *texture_l, gx_texture *texture_r)
 static void gxDrawOnScreenText(char *msg)
 {
   GXRModeObj *temp = vmode;
-  int y = (40 * rmode->efbHeight) / 480;
+  int y = (40 * rmode->efbHeight) / 240;
   int x = (bitmap.viewport.x > 0) ? (24 + bitmap.viewport.x) : 24;
   x = (x * rmode->fbWidth) / rmode->viWidth;
 
@@ -963,9 +978,9 @@ void gxDrawScreenshot(u8 alpha)
   s32 h = yscale * 4;
 
   /* black out surrounding area if necessary (Game Gear without borders) */
-  if ((w < 640) || (h < 480))
+  if ((w < 320) || (h < 240))
   {
-    gxDrawRectangle(0, 0, 640, 480, 255, (GXColor)BLACK);
+    gxDrawRectangle(0, 0, 320, 240, 255, (GXColor)BLACK);
   }
 
   /* draw textured quad */
@@ -993,15 +1008,15 @@ void gxCopyScreenshot(gx_texture *texture)
   GX_InvalidateTexAll();
 
   /* scale texture to EFB width */
-  s32 w = ((bitmap.viewport.w + 2*bitmap.viewport.x) * 640) / bitmap.viewport.w;
+  s32 w = ((bitmap.viewport.w + 2*bitmap.viewport.x) * 320) / bitmap.viewport.w;
   s32 h = (bitmap.viewport.h + 2*bitmap.viewport.y) * 2;
   s32 x = -w/2;
   s32 y = -(240+ 2*bitmap.viewport.y);
 
   /* black out surrounding area if necessary (Game Gear without borders) */
-  if ((w < 640) || (h < 480))
+  if ((w < 320) || (h < 240))
   {
-    gxDrawRectangle(0, 0, 640, 480, 255, (GXColor)BLACK);
+    gxDrawRectangle(0, 0, 320, 240, 255, (GXColor)BLACK);
   }
 
   /* draw textured quad */
@@ -1728,10 +1743,12 @@ int gx_video_Update(int status)
       }
 
       /* update aspect ratio */
-      gxResetScaler(vwidth);
+      if (!ConfigRequested) gxResetScaler(320);
+      else gxResetScaler(vwidth);
 
       /* update GX rendering mode */
-      gxResetMode(rmode, config.vfilter);
+      if (!ConfigRequested) gxResetMode(rmode, 0);
+      else gxResetMode(rmode, config.vfilter);
 
       /* update VI mode */
       VIDEO_Configure(rmode);
@@ -1883,6 +1900,7 @@ void gx_video_Init(void)
   }
 
   /* Configure VI */
+  if (!ConfigRequested) vmode = &TVEurgb60Hz240Ds;
   VIDEO_Configure(vmode);
 
   /* Initialize font first (to ensure IPL font buffer is allocated in MEM1 as DMA from EXI bus to MEM2 is apparently not possible) */
@@ -1893,7 +1911,8 @@ void gx_video_Init(void)
   xfb[1] = (u32 *) MEM_K0_TO_K1((u32 *) SYS_AllocateFramebuffer(&TV50hz_576i));
 
   /* Define a console */
-  console_init(xfb[0], 20, 64, 640, 574, 574 * 2);
+  if (!ConfigRequested) console_init(xfb[0], 20, 64, TVEurgb60Hz240Ds.fbWidth, TVEurgb60Hz240Ds.xfbHeight, TVEurgb60Hz240Ds.fbWidth * VI_DISPLAY_PIX_SZ);
+  else console_init(xfb[0], 20, 64, 640, 574, 574 * 2);
 
   /* Clear framebuffer to black */
   VIDEO_ClearFrameBuffer(vmode, xfb[0], COLOR_BLACK);
